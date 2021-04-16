@@ -1,0 +1,607 @@
+package gemini // import "git.sr.ht/~adnano/go-gemini"
+
+Package gemini provides Gemini client and server implementations.
+
+Client is a Gemini client.
+
+    client := &gemini.Client{}
+    ctx := context.Background()
+    resp, err := client.Get(ctx, "gemini://example.com")
+    if err != nil {
+    	// handle error
+    }
+    defer resp.Body.Close()
+    // ...
+
+Server is a Gemini server.
+
+    server := &gemini.Server{
+    	ReadTimeout:  10 * time.Second,
+    	WriteTimeout: 10 * time.Second,
+    }
+
+Servers should be configured with certificates:
+
+    certificates := &certificate.Store{}
+    certificates.Register("localhost")
+    err := certificates.Load("/var/lib/gemini/certs")
+    if err != nil {
+    	// handle error
+    }
+    server.GetCertificate = certificates.Get
+
+Mux is a Gemini request multiplexer. Mux can handle requests for multiple
+hosts and schemes.
+
+    mux := &gemini.Mux{}
+    mux.HandleFunc("example.com", func(ctx context.Context, w gemini.ResponseWriter, r *gemini.Request) {
+    	fmt.Fprint(w, "Welcome to example.com")
+    })
+    mux.HandleFunc("example.org/about.gmi", func(ctx context.Context, w gemini.ResponseWriter, r *gemini.Request) {
+    	fmt.Fprint(w, "About example.org")
+    })
+    mux.HandleFunc("http://example.net", func(ctx context.Context, w gemini.ResponseWriter, r *gemini.Request) {
+    	fmt.Fprint(w, "Proxied content from http://example.net")
+    })
+    server.Handler = mux
+
+To start the server, call ListenAndServe:
+
+    ctx := context.Background()
+    err := server.ListenAndServe(ctx)
+    if err != nil {
+    	// handle error
+    }
+
+VARIABLES
+
+var (
+	ErrInvalidRequest  = errors.New("gemini: invalid request")
+	ErrInvalidResponse = errors.New("gemini: invalid response")
+
+	// ErrBodyNotAllowed is returned by ResponseWriter.Write calls
+	// when the response status code does not permit a body.
+	ErrBodyNotAllowed = errors.New("gemini: response status code does not allow body")
+)
+    Errors.
+
+
+FUNCTIONS
+
+func ParseLines(r io.Reader, handler func(Line)) error
+    ParseLines parses Gemini text from the provided io.Reader. It calls handler
+    with each line that it parses.
+
+func QueryEscape(query string) string
+    QueryEscape escapes a string for use in a Gemini URL query. It is like
+    url.PathEscape except that it also replaces plus signs with their
+    percent-encoded counterpart.
+
+func QueryUnescape(query string) (string, error)
+    QueryUnescape unescapes a Gemini URL query. It is identical to
+    url.PathUnescape.
+
+func ServeContent(w ResponseWriter, r *Request, name string, content io.Reader)
+    ServeContent replies to the request using the content in the provided
+    Reader. The main benefit of ServeContent over io.Copy is that it sets the
+    MIME type of the response.
+
+    ServeContent tries to deduce the type from name's file extension. The name
+    is otherwise unused; it is never sent in the response.
+
+func ServeFile(w ResponseWriter, r *Request, fsys fs.FS, name string)
+    ServeFile responds to the request with the contents of the named file or
+    directory.
+
+    If the provided file or directory name is a relative path, it is interpreted
+    relative to the current directory and may ascend to parent directories. If
+    the provided name is constructed from user input, it should be sanitized
+    before calling ServeFile.
+
+    As a precaution, ServeFile will reject requests where r.URL.Path contains a
+    ".." path element; this protects against callers who might unsafely use
+    path.Join on r.URL.Path without sanitizing it and then use that path.Join
+    result as the name argument.
+
+    As another special case, ServeFile redirects any request where r.URL.Path
+    ends in "/index.gmi" to the same path, without the final "index.gmi". To
+    avoid such redirects either modify the path or use ServeContent.
+
+    Outside of those two special cases, ServeFile does not use r.URL.Path for
+    selecting the file or directory to serve; only the file or directory
+    provided in the name argument is used.
+
+
+TYPES
+
+type Client struct {
+	// TrustCertificate is called to determine whether the client should
+	// trust the certificate provided by the server.
+	// If TrustCertificate is nil or returns nil, the client will accept
+	// any certificate. Otherwise, the certificate will not be trusted
+	// and the request will be aborted.
+	//
+	// See the tofu submodule for an implementation of trust on first use.
+	TrustCertificate func(hostname string, cert *x509.Certificate) error
+
+	// DialContext specifies the dial function for creating TCP connections.
+	// If DialContext is nil, the client dials using package net.
+	DialContext func(ctx context.Context, network, addr string) (net.Conn, error)
+}
+    A Client is a Gemini client. Its zero value is a usable client.
+
+func (c *Client) Do(ctx context.Context, req *Request) (*Response, error)
+    Do sends a Gemini request and returns a Gemini response. The context
+    controls the entire lifetime of a request and its response: obtaining a
+    connection, sending the request, and reading the response header and body.
+
+    An error is returned if there was a Gemini protocol error. A non-2x status
+    code doesn't cause an error.
+
+    If the returned error is nil, the user is expected to close the Response.
+
+func (c *Client) Get(ctx context.Context, url string) (*Response, error)
+    Get sends a Gemini request for the given URL. The context controls the
+    entire lifetime of a request and its response: obtaining a connection,
+    sending the request, and reading the response header and body.
+
+    An error is returned if there was a Gemini protocol error. A non-2x status
+    code doesn't cause an error.
+
+    If the returned error is nil, the user is expected to close the Response.
+
+    For more control over requests, use NewRequest and Client.Do.
+
+type Handler interface {
+	ServeGemini(context.Context, ResponseWriter, *Request)
+}
+    A Handler responds to a Gemini request.
+
+    ServeGemini should write the response header and data to the ResponseWriter
+    and then return. Returning signals that the request is finished; it is not
+    valid to use the ResponseWriter after or concurrently with the completion of
+    the ServeGemini call.
+
+    The provided context is canceled when the client's connection is closed or
+    the ServeGemini method returns.
+
+    Handlers should not modify the provided Request.
+
+func FileServer(fsys fs.FS) Handler
+    FileServer returns a handler that serves Gemini requests with the contents
+    of the provided file system.
+
+    To use the operating system's file system implementation, use os.DirFS:
+
+        gemini.FileServer(os.DirFS("/tmp"))
+
+func LoggingMiddleware(h Handler) Handler
+    LoggingMiddleware returns a handler that wraps h and logs Gemini requests
+    and their responses to the log package's standard logger. Requests are
+    logged with the format "gemini: {host} {URL} {status code} {bytes written}".
+
+func NotFoundHandler() Handler
+    NotFoundHandler returns a simple request handler that replies to each
+    request with a “51 Not found” reply.
+
+func StatusHandler(status Status, meta string) Handler
+    StatusHandler returns a request handler that responds to each request with
+    the provided status code and meta.
+
+func StripPrefix(prefix string, h Handler) Handler
+    StripPrefix returns a handler that serves Gemini requests by removing the
+    given prefix from the request URL's Path (and RawPath if set) and invoking
+    the handler h. StripPrefix handles a request for a path that doesn't begin
+    with prefix by replying with a Gemini 51 not found error. The prefix must
+    match exactly: if the prefix in the request contains escaped characters the
+    reply is also a Gemini 51 not found error.
+
+func TimeoutHandler(h Handler, dt time.Duration, message string) Handler
+    TimeoutHandler returns a Handler that runs h with the given time limit.
+
+    The new Handler calls h.ServeGemini to handle each request, but if a call
+    runs for longer than its time limit, the handler responds with a 40
+    Temporary Failure status code and the given message in its response meta.
+    After such a timeout, writes by h to its ResponseWriter will return
+    context.DeadlineExceeded.
+
+type HandlerFunc func(context.Context, ResponseWriter, *Request)
+    The HandlerFunc type is an adapter to allow the use of ordinary functions as
+    Gemini handlers. If f is a function with the appropriate signature,
+    HandlerFunc(f) is a Handler that calls f.
+
+func (f HandlerFunc) ServeGemini(ctx context.Context, w ResponseWriter, r *Request)
+    ServeGemini calls f(ctx, w, r).
+
+type Line interface {
+	// String formats the line for use in a Gemini text response.
+	String() string
+	// Has unexported methods.
+}
+    Line represents a line of a Gemini text response.
+
+type LineHeading1 string
+    LineHeading1 is a first-level heading line.
+
+func (l LineHeading1) String() string
+
+type LineHeading2 string
+    LineHeading2 is a second-level heading line.
+
+func (l LineHeading2) String() string
+
+type LineHeading3 string
+    LineHeading3 is a third-level heading line.
+
+func (l LineHeading3) String() string
+
+type LineLink struct {
+	URL  string
+	Name string
+}
+    LineLink is a link line.
+
+func (l LineLink) String() string
+
+type LineListItem string
+    LineListItem is an unordered list item line.
+
+func (l LineListItem) String() string
+
+type LinePreformattedText string
+    LinePreformattedText is a preformatted text line.
+
+func (l LinePreformattedText) String() string
+
+type LinePreformattingToggle string
+    LinePreformattingToggle is a preformatting toggle line.
+
+func (l LinePreformattingToggle) String() string
+
+type LineQuote string
+    LineQuote is a quote line.
+
+func (l LineQuote) String() string
+
+type LineText string
+    LineText is a text line.
+
+func (l LineText) String() string
+
+type Mux struct {
+	// Has unexported fields.
+}
+    Mux is a Gemini request multiplexer. It matches the URL of each incoming
+    request against a list of registered patterns and calls the handler for the
+    pattern that most closely matches the URL.
+
+    Patterns name fixed, rooted paths, like "/favicon.ico", or rooted subtrees,
+    like "/images/" (note the trailing slash). Longer patterns take precedence
+    over shorter ones, so that if there are handlers registered for both
+    "/images/" and "/images/thumbnails/", the latter handler will be called for
+    paths beginning "/images/thumbnails/" and the former will receive requests
+    for any other paths in the "/images/" subtree.
+
+    Note that since a pattern ending in a slash names a rooted subtree, the
+    pattern "/" matches all paths not matched by other registered patterns, not
+    just the URL with Path == "/".
+
+    Patterns may also contain schemes and hostnames. Wildcard patterns can be
+    used to match multiple hostnames (e.g. "*.example.com").
+
+    The following are examples of valid patterns, along with the scheme,
+    hostname, and path that they match.
+
+        Pattern                      │ Scheme │ Hostname │ Path
+        ─────────────────────────────┼────────┼──────────┼─────────────
+        /file                        │ gemini │ *        │ /file
+        /directory/                  │ gemini │ *        │ /directory/*
+        hostname/file                │ gemini │ hostname │ /file
+        hostname/directory/          │ gemini │ hostname │ /directory/*
+        scheme://hostname/file       │ scheme │ hostname │ /file
+        scheme://hostname/directory/ │ scheme │ hostname │ /directory/*
+        //hostname/file              │ *      │ hostname │ /file
+        //hostname/directory/        │ *      │ hostname │ /directory/*
+        scheme:///file               │ scheme │ *        │ /file
+        scheme:///directory/         │ scheme │ *        │ /directory/*
+        ///file                      │ *      │ *        │ /file
+        ///directory/                │ *      │ *        │ /directory/*
+
+    A pattern without a hostname will match any hostname. If a pattern begins
+    with "//", it will match any scheme. Otherwise, a pattern with no scheme is
+    treated as though it has a scheme of "gemini".
+
+    If a subtree has been registered and a request is received naming the
+    subtree root without its trailing slash, Mux redirects that request to the
+    subtree root (adding the trailing slash). This behavior can be overridden
+    with a separate registration for the path without the trailing slash. For
+    example, registering "/images/" causes Mux to redirect a request for
+    "/images" to "/images/", unless "/images" has been registered separately.
+
+    Mux also takes care of sanitizing the URL request path and redirecting any
+    request containing . or .. elements or repeated slashes to an equivalent,
+    cleaner URL.
+
+func (mux *Mux) Handle(pattern string, handler Handler)
+    Handle registers the handler for the given pattern. If a handler already
+    exists for pattern, Handle panics.
+
+func (mux *Mux) HandleFunc(pattern string, handler HandlerFunc)
+    HandleFunc registers the handler function for the given pattern.
+
+func (mux *Mux) Handler(r *Request) Handler
+    Handler returns the handler to use for the given request, consulting
+    r.URL.Scheme, r.URL.Host, and r.URL.Path. It always returns a non-nil
+    handler. If the path is not in its canonical form, the handler will be an
+    internally-generated handler that redirects to the canonical path. If the
+    host contains a port, it is ignored when matching handlers.
+
+func (mux *Mux) ServeGemini(ctx context.Context, w ResponseWriter, r *Request)
+    ServeGemini dispatches the request to the handler whose pattern most closely
+    matches the request URL.
+
+type Request struct {
+	// URL specifies the URL being requested.
+	URL *url.URL
+
+	// For client requests, Host optionally specifies the server to
+	// connect to. It may be of the form "host" or "host:port".
+	// If empty, the value of URL.Host is used.
+	// For international domain names, Host may be in Punycode or
+	// Unicode form. Use golang.org/x/net/idna to convert it to
+	// either format if needed.
+	// This field is ignored by the Gemini server.
+	Host string
+
+	// For client requests, Certificate optionally specifies the
+	// TLS certificate to present to the other side of the connection.
+	// This field is ignored by the Gemini server.
+	Certificate *tls.Certificate
+
+	// Has unexported fields.
+}
+    A Request represents a Gemini request received by a server or to be sent by
+    a client.
+
+func NewRequest(rawurl string) (*Request, error)
+    NewRequest returns a new request. The returned Request is suitable for use
+    with Client.Do.
+
+    Callers should be careful that the URL query is properly escaped. See the
+    documentation for QueryEscape for more information.
+
+func ReadRequest(r io.Reader) (*Request, error)
+    ReadRequest reads and parses an incoming request from r.
+
+    ReadRequest is a low-level function and should only be used for specialized
+    applications; most code should use the Server to read requests and handle
+    them via the Handler interface.
+
+func (r *Request) Conn() net.Conn
+    Conn returns the network connection on which the request was received. Conn
+    returns nil for client requests.
+
+func (r *Request) ServerName() string
+    ServerName returns the value of the TLS Server Name Indication extension
+    sent by the client. ServerName returns an empty string for client requests.
+
+func (r *Request) TLS() *tls.ConnectionState
+    TLS returns information about the TLS connection on which the request was
+    received. TLS returns nil for client requests.
+
+func (r *Request) WriteTo(w io.Writer) (int64, error)
+    WriteTo writes r to w in the Gemini request format. This method consults the
+    request URL only.
+
+type Response struct {
+	// Status is the response status code.
+	Status Status
+
+	// Meta returns the response meta.
+	// For successful responses, the meta should contain the media type of the response.
+	// For failure responses, the meta should contain a short description of the failure.
+	Meta string
+
+	// Body represents the response body.
+	//
+	// The response body is streamed on demand as the Body field
+	// is read. If the network connection fails or the server
+	// terminates the response, Body.Read calls return an error.
+	//
+	// The Gemini client guarantees that Body is always
+	// non-nil, even on responses without a body or responses with
+	// a zero-length body. It is the caller's responsibility to
+	// close Body.
+	Body io.ReadCloser
+
+	// Has unexported fields.
+}
+    Response represents the response from a Gemini request.
+
+    The Client returns Responses from servers once the response header has been
+    received. The response body is streamed on demand as the Body field is read.
+
+func ReadResponse(r io.ReadCloser) (*Response, error)
+    ReadResponse reads a Gemini response from the provided io.ReadCloser.
+
+func (r *Response) Conn() net.Conn
+    Conn returns the network connection on which the response was received.
+
+func (r *Response) TLS() *tls.ConnectionState
+    TLS returns information about the TLS connection on which the response was
+    received.
+
+func (r *Response) WriteTo(w io.Writer) (int64, error)
+    WriteTo writes r to w in the Gemini response format, including the header
+    and body.
+
+    This method consults the Status, Meta, and Body fields of the response. The
+    Response Body is closed after it is sent.
+
+type ResponseWriter interface {
+	// SetMediaType sets the media type that will be sent by Write for a
+	// successful response. If no media type is set, a default media type of
+	// "text/gemini" will be used.
+	//
+	// Setting the media type after a call to Write or WriteHeader has
+	// no effect.
+	SetMediaType(mediatype string)
+
+	// Write writes the data to the connection as part of a Gemini response.
+	//
+	// If WriteHeader has not yet been called, Write calls WriteHeader with
+	// StatusSuccess and the media type set in SetMediaType before writing the data.
+	// If no media type was set, Write uses a default media type of
+	// "text/gemini".
+	Write([]byte) (int, error)
+
+	// WriteHeader sends a Gemini response header with the provided
+	// status code and meta.
+	//
+	// If WriteHeader is not called explicitly, the first call to Write
+	// will trigger an implicit call to WriteHeader with a successful
+	// status code and the media type set in SetMediaType.
+	//
+	// The provided code must be a valid Gemini status code.
+	// The provided meta must not be longer than 1024 bytes.
+	// Only one header may be written.
+	WriteHeader(status Status, meta string)
+
+	// Flush sends any buffered data to the client.
+	Flush() error
+}
+    A ResponseWriter interface is used by a Gemini handler to construct a Gemini
+    response.
+
+    A ResponseWriter may not be used after the Handler.ServeGemini method has
+    returned.
+
+type Server struct {
+	// Addr optionally specifies the TCP address for the server to listen on,
+	// in the form "host:port". If empty, ":1965" (port 1965) is used.
+	// See net.Dial for details of the address format.
+	Addr string
+
+	// The Handler to invoke.
+	Handler Handler
+
+	// ReadTimeout is the maximum duration for reading the entire
+	// request.
+	//
+	// A ReadTimeout of zero means no timeout.
+	ReadTimeout time.Duration
+
+	// WriteTimeout is the maximum duration before timing out
+	// writes of the response.
+	//
+	// A WriteTimeout of zero means no timeout.
+	WriteTimeout time.Duration
+
+	// GetCertificate returns a TLS certificate based on the given
+	// hostname.
+	//
+	// If GetCertificate is nil or returns nil, then no certificate
+	// will be used and the connection will be aborted.
+	//
+	// See the certificate submodule for a certificate store that creates
+	// and rotates certificates as needed.
+	GetCertificate func(hostname string) (*tls.Certificate, error)
+
+	// ErrorLog specifies an optional logger for errors accepting connections,
+	// unexpected behavior from handlers, and underlying file system errors.
+	// If nil, logging is done via the log package's standard logger.
+	ErrorLog interface {
+		Printf(format string, v ...interface{})
+	}
+
+	// Has unexported fields.
+}
+    A Server defines parameters for running a Gemini server. The zero value for
+    Server is a valid configuration.
+
+func (srv *Server) Close() error
+    Close immediately closes all active net.Listeners and connections. For a
+    graceful shutdown, use Shutdown.
+
+func (srv *Server) ListenAndServe(ctx context.Context) error
+    ListenAndServe listens for requests at the server's configured address.
+    ListenAndServe listens on the TCP network address srv.Addr and then calls
+    Serve to handle requests on incoming connections. If the provided context
+    expires, ListenAndServe closes l and returns the context's error.
+
+    If srv.Addr is blank, ":1965" is used.
+
+    ListenAndServe always returns a non-nil error. After Shutdown or Closed, the
+    returned error is context.Canceled.
+
+func (srv *Server) Serve(ctx context.Context, l net.Listener) error
+    Serve accepts incoming connections on the Listener l, creating a new service
+    goroutine for each. The service goroutines read the requests and then call
+    the appropriate Handler to reply to them. If the provided context expires,
+    Serve closes l and returns the context's error.
+
+    Serve always closes l and returns a non-nil error. After Shutdown or Close,
+    the returned error is context.Canceled.
+
+func (srv *Server) ServeConn(ctx context.Context, conn net.Conn) error
+    ServeConn serves a Gemini response over the provided connection. It closes
+    the connection when the response has been completed. If the provided context
+    expires before the response has completed, ServeConn closes the connection
+    and returns the context's error.
+
+func (srv *Server) Shutdown(ctx context.Context) error
+    Shutdown gracefully shuts down the server without interrupting any active
+    connections. Shutdown works by first closing all open listeners and then
+    waiting indefinitely for connections to close. If the provided context
+    expires before the shutdown is complete, Shutdown returns the context's
+    error.
+
+    When Shutdown is called, Serve and ListenAndServe immediately return an
+    error. Make sure the program doesn't exit and waits instead for Shutdown to
+    return.
+
+    Once Shutdown has been called on a server, it may not be reused; future
+    calls to methods such as Serve will return an error.
+
+type Status int
+    Status represents a Gemini status code.
+
+const (
+	StatusInput                    Status = 10
+	StatusSensitiveInput           Status = 11
+	StatusSuccess                  Status = 20
+	StatusRedirect                 Status = 30
+	StatusPermanentRedirect        Status = 31
+	StatusTemporaryFailure         Status = 40
+	StatusServerUnavailable        Status = 41
+	StatusCGIError                 Status = 42
+	StatusProxyError               Status = 43
+	StatusSlowDown                 Status = 44
+	StatusPermanentFailure         Status = 50
+	StatusNotFound                 Status = 51
+	StatusGone                     Status = 52
+	StatusProxyRequestRefused      Status = 53
+	StatusBadRequest               Status = 59
+	StatusCertificateRequired      Status = 60
+	StatusCertificateNotAuthorized Status = 61
+	StatusCertificateNotValid      Status = 62
+)
+    Gemini status codes.
+
+func (s Status) Class() Status
+    Class returns the status class for the status code. 1x becomes 10, 2x
+    becomes 20, and so on.
+
+func (s Status) String() string
+    String returns a text for the status code. It returns the empty string if
+    the status code is unknown.
+
+type Text []Line
+    Text represents a Gemini text response.
+
+func ParseText(r io.Reader) (Text, error)
+    ParseText parses Gemini text from the provided io.Reader.
+
+func (t Text) String() string
+    String writes the Gemini text response to a string and returns it.
+

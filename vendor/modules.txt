@@ -1,0 +1,10 @@
+# git.sr.ht/~adnano/go-gemini v0.2.0
+## explicit
+git.sr.ht/~adnano/go-gemini
+# golang.org/x/net v0.0.0-20210119194325-5f4716e94777
+golang.org/x/net/idna
+# golang.org/x/text v0.3.3
+golang.org/x/text/secure/bidirule
+golang.org/x/text/transform
+golang.org/x/text/unicode/bidi
+golang.org/x/text/unicode/norm
