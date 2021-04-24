@@ -24,7 +24,7 @@ func main() {
 	//genVars(pkg)
 	fmt.Println(len(pkg.Types))
 	for _, ele := range pkg.Types {
-		fmt.Printf("%v\n%v\n", GenComment(ele.Decl), GenCodeBlock(ele.Decl, fset))
+		fmt.Printf("%v\n%v\n", ele.Doc, GenCodeBlock(ele.Decl, fset))
 	}
 	//fmt.Printf("Name: %v\nDoc: %v\nImport Path: %v\n", pkg.Name, pkg.Doc, pkg.ImportPath)
 }

@@ -18,6 +18,7 @@ func lens(pkg *doc.Package) {
 // GenComment gets the comments from a GenDecl, returns an empty string if no
 // comments exist.
 func GenComment(decl *ast.GenDecl) string {
+	fmt.Printf("%v\n", decl)
 	if decl.Doc != nil {
 		return decl.Doc.Text()
 	}
