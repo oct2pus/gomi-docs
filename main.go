@@ -7,7 +7,6 @@ import (
 	"go/doc"
 	"go/parser"
 	"go/token"
-	"io/ioutil"
 	"log"
 	"os"
 	"strings"
@@ -17,16 +16,20 @@ import (
 
 // TODO: Remove log.Fatal(err)s
 func main() {
-	pkg, err := getDocs("vendor/git.sr.ht/~adnano/go-gemini")
+	pkg, fset, err := getDocs("vendor/git.sr.ht/~adnano/go-gemini")
 	if err != nil {
 		log.Fatal(err)
 	}
 	//lens(pkg)
-	genVars(pkg)
+	//genVars(pkg)
+	fmt.Println(len(pkg.Types))
+	for _, ele := range pkg.Types {
+		fmt.Printf("%v\n%v\n", GenComment(ele.Decl), GenCodeBlock(ele.Decl, fset))
+	}
 	//fmt.Printf("Name: %v\nDoc: %v\nImport Path: %v\n", pkg.Name, pkg.Doc, pkg.ImportPath)
 }
 
-func getDocs(dirName string) (*doc.Package, error) {
+func getDocs(dirName string) (*doc.Package, *token.FileSet, error) {
 	//dirName := "vendor/git.sr.ht/~adnano/go-gemini"
 	fset := token.NewFileSet()
 	astfiles := [](*ast.File){}
@@ -37,12 +40,15 @@ func getDocs(dirName string) (*doc.Package, error) {
 	}
 	for _, file := range files {
 		if strings.HasSuffix(file.Name(), ".go") {
+			fmt.Printf("Loaded %v/%v\n", dirName, file.Name())
 			fullpath := fmt.Sprintf("%v/%v", dirName, file.Name())
 
-			bytes, err := ioutil.ReadFile(fullpath)
+			bytes, err := os.ReadFile(fullpath)
 			if err != nil {
 				log.Fatal(err)
 			}
+			//fset.AddFile(fullpath, fset.Base(), len(bytes))
+
 			astfile, err := parser.ParseFile(fset, fullpath, bytes, parser.ParseComments)
 			if err != nil {
 				log.Fatal(err)
@@ -62,5 +68,7 @@ func getDocs(dirName string) (*doc.Package, error) {
 		}
 	}
 	// this assumes go.mod exists
-	return doc.NewFromFiles(fset, astfiles, mod, doc.AllMethods)
+
+	docu, err := doc.NewFromFiles(fset, astfiles, mod, doc.AllMethods)
+	return docu, fset, err
 }
