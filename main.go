@@ -22,11 +22,13 @@ func main() {
 	}
 	//lens(pkg)
 	//genVars(pkg)
-	fmt.Println(len(pkg.Types))
-	for _, ele := range pkg.Types {
+	//fmt.Println(len(pkg.Types))
+	/*for _, ele := range pkg.Types {
 		fmt.Printf("%v\n%v\n", ele.Doc, GenCodeBlock(ele.Decl, fset))
-	}
+	}*/
 	//fmt.Printf("Name: %v\nDoc: %v\nImport Path: %v\n", pkg.Name, pkg.Doc, pkg.ImportPath)
+	fmt.Printf("%v", fset)
+	Load(pkg)
 }
 
 func getDocs(dirName string) (*doc.Package, *token.FileSet, error) {
