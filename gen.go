@@ -19,7 +19,6 @@ func lens(pkg *doc.Package) {
 // GenComment gets the comments from a GenDecl, returns an empty string if no
 // comments exist.
 func GenComment(decl *ast.GenDecl) string {
-	fmt.Printf("%v\n", decl)
 	if decl.Doc != nil {
 		return decl.Doc.Text()
 	}
@@ -37,14 +36,21 @@ func GenCodeBlock(decl *ast.GenDecl, fset *token.FileSet) string {
 	bp := getBytePos(decl, fset.File(decl.TokPos))
 	buf := bytes.NewBuffer(file)
 	buf.Next(bp.Start)
-	fmt.Printf("reading %v to %v from file %v\n", bp.Start, bp.AbsEnd, pos.Filename)
 	return string(buf.Next(bp.Length))
 }
 
+// GenVarBlock formats the variable and constant field
+func GenVarBlock(decl *ast.GenDecl, fset *token.FileSet) string {
+	return "```A Block of Code.\n" + GenCodeBlock(decl, fset) + "\n```\n" + GenComment(decl) + "\n"
+}
+
+// bytePos is a helper struct to minimize line length when determining offsets
+// in a token's position
 type bytePos struct {
 	Start, Length, AbsEnd int
 }
 
+// getBytePos creates a bytePos from a declaration and a file token
 func getBytePos(decl *ast.GenDecl, file *token.File) bytePos {
 	var bp bytePos
 	bp.Start = file.Offset(decl.Pos())
@@ -53,6 +59,9 @@ func getBytePos(decl *ast.GenDecl, file *token.File) bytePos {
 	return bp
 }
 
+// tabs2blocks handles comments that have a mixture of unformatted and
+// preformated text, such as the Overview which might have some blocks of code
+// in it
 func tabs2blocks(in string) string {
 	lines := strings.Split(in, "\n")
 	senil := make([]string, 0)
@@ -75,6 +84,5 @@ func tabs2blocks(in string) string {
 		appended = false
 	}
 	out := strings.Join(senil, "\n")
-	log.Printf("%v\n", senil)
 	return out
 }
