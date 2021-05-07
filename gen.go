@@ -8,6 +8,7 @@ import (
 	"go/token"
 	"log"
 	"os"
+	"strings"
 )
 
 //debug command
@@ -50,4 +51,30 @@ func getBytePos(decl *ast.GenDecl, file *token.File) bytePos {
 	bp.Length = file.Offset(decl.End()) - file.Offset(decl.Pos())
 	bp.AbsEnd = file.Offset(decl.End())
 	return bp
+}
+
+func tabs2blocks(in string) string {
+	lines := strings.Split(in, "\n")
+	senil := make([]string, 0)
+	tabbed, appended := false, false
+	for x := range lines {
+		if strings.HasPrefix(lines[x], "	") {
+			if !tabbed {
+				senil = append(senil, "```A block of Golang code.\n"+lines[x])
+				tabbed = true
+				appended = true
+			}
+		} else if tabbed {
+			senil = append(senil, "\n```\n"+lines[x])
+			tabbed = false
+			appended = true
+		}
+		if !appended {
+			senil = append(senil, lines[x])
+		}
+		appended = false
+	}
+	out := strings.Join(senil, "\n")
+	log.Printf("%v\n", senil)
+	return out
 }
