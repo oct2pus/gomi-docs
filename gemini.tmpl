@@ -7,5 +7,12 @@ import "{{.Import}}"
 # Overview
 {{.Overview}}
 
-# Variables
-{{.Variables}}
+{{if .Constants}}
+	# Constants
+	{{.Constants}}
+{{end}}
+
+{{if .Variables}}
+	# Variables
+	{{.Variables}}
+{{end}}

@@ -16,8 +16,8 @@ func lens(pkg *doc.Package) {
 	fmt.Printf("==Lens==\nImports: %v\nFilenames: %v\nNotes: %v\nBugs: %v\nConsts: %v\nTypes: %v\nVars: %v\nFuncs: %v\nExamples: %v\n", len(pkg.Imports), len(pkg.Filenames), len(pkg.Notes), len(pkg.Bugs), len(pkg.Consts), len(pkg.Types), len(pkg.Vars[0].Names), len(pkg.Funcs), len(pkg.Examples))
 }
 
-// GenComment gets the comments from a GenDecl, returns an empty string if no
-// comments exist.
+// GenComment gets the comments from a GenDecl
+// returns an empty string if no comments exist.
 func GenComment(decl *ast.GenDecl) string {
 	if decl.Doc != nil {
 		return decl.Doc.Text()
@@ -40,8 +40,8 @@ func GenCodeBlock(decl *ast.GenDecl, fset *token.FileSet) string {
 }
 
 // GenVarBlock formats the variable and constant field
-func GenVarBlock(decl *ast.GenDecl, fset *token.FileSet) string {
-	return "```A Block of Code.\n" + GenCodeBlock(decl, fset) + "\n```\n" + GenComment(decl) + "\n"
+func GenVarBlock(decl *ast.GenDecl, doc string, fset *token.FileSet) string {
+	return "```A block of Golang code.\n" + GenCodeBlock(decl, fset) + "\n```\n" + doc + "\n"
 }
 
 // bytePos is a helper struct to minimize line length when determining offsets
