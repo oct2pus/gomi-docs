@@ -27,8 +27,7 @@ func main() {
 		fmt.Printf("%v\n%v\n", ele.Doc, GenCodeBlock(ele.Decl, fset))
 	}*/
 	//fmt.Printf("Name: %v\nDoc: %v\nImport Path: %v\n", pkg.Name, pkg.Doc, pkg.ImportPath)
-	fmt.Printf("%v", fset)
-	Load(pkg)
+	Load(pkg, fset)
 }
 
 func getDocs(dirName string) (*doc.Package, *token.FileSet, error) {
@@ -42,7 +41,7 @@ func getDocs(dirName string) (*doc.Package, *token.FileSet, error) {
 	}
 	for _, file := range files {
 		if strings.HasSuffix(file.Name(), ".go") {
-			fmt.Printf("Loaded %v/%v\n", dirName, file.Name())
+			//fmt.Printf("Loaded %v/%v\n", dirName, file.Name())
 			fullpath := fmt.Sprintf("%v/%v", dirName, file.Name())
 
 			bytes, err := os.ReadFile(fullpath)
