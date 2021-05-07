@@ -2,6 +2,7 @@ package main
 
 import (
 	"go/doc"
+	"go/token"
 	"log"
 	"os"
 	"text/template"
@@ -17,12 +18,16 @@ func init() {
 	}
 }
 
-func Load(pkg *doc.Package) {
+func Load(pkg *doc.Package, fset *token.FileSet) {
 	data := struct {
-		Package  string
-		Import   string
-		Overview string
-	}{Package: pkg.Name, Import: pkg.ImportPath, Overview: tabs2blocks(pkg.Doc)}
+		Package   string
+		Import    string
+		Overview  string
+		Variables string
+	}{Package: pkg.Name,
+		Import:    pkg.ImportPath,
+		Overview:  tabs2blocks(pkg.Doc),
+		Variables: GenVarBlock(pkg.Vars[0].Decl, fset)}
 	file, err := os.Create("out.gmi")
 	if err != nil {
 		log.Fatal(err)
